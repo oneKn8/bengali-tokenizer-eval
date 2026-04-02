@@ -14,7 +14,7 @@
 \usepackage{microtype}
 \usepackage{inconsolata}
 
-\title{Subword Tokenization Efficiency for Bengali Language Modeling}
+\title{Subword Tokenization Efficiency and Unicode Failure Modes in Bengali Language Modeling}
 
 \author{
   Shifat Islam Santo \\
@@ -26,10 +26,11 @@
 \maketitle
 
 \begin{abstract}
-We present a systematic evaluation of subword tokenization strategies for Bengali, comparing 14 tokenizers across dedicated Bengali models, multilingual LLMs, and newly trained variants.
-Our evaluation on 3,000 Bengali documents reveals that Bengali-dedicated tokenizers (1.47--1.75 tokens/word) are up to 9.3$\times$ more efficient than most multilingual alternatives (7.32--13.69 tokens/word), though BLOOM (1.75) is a notable exception among multilingual models.
-We find that (1) a single missing Unicode combining character (U+09BC Bengali Nukta) in tokenizer training data is associated with a byte-fallback rate increase from 2\% to 20\%, with quantitative analysis showing this character accounts for 89.8\% of all byte-fallback tokens, and (2) Bengali-dedicated tokenizers that memorize whole words achieve superior efficiency but sacrifice morphological decomposition that may benefit generative model generalization.
-We release our evaluation framework, trained tokenizers, and benchmark data to support future Bengali NLP research.
+We present the first systematic evaluation of subword tokenization strategies for Bengali language modeling, comparing 14 tokenizers across Bengali-dedicated models, multilingual LLMs, and newly trained variants.
+On 3,000 held-out Bengali documents, tokenizer choice changes efficiency dramatically: Bengali-dedicated tokenizers achieve 1.47--1.75 tokens per word, while most multilingual alternatives require 7.32--13.69, yielding a 5.0--9.3$\times$ penalty in effective context usage.
+We identify a concrete Unicode failure mode behind this gap in our own training runs: omission of a single combining character, U+09BC Bengali Nukta, drives byte-fallback from roughly 2\% to 20\% and accounts for 89.8\% of byte-level tokens in the affected models.
+We also document an efficiency--compositionality tradeoff: tokenizers that memorize whole Bengali words maximize fertility, while more decompositional tokenizers may preserve morpheme structure that could help generative generalization.
+We release an evaluation framework, 13 trained tokenizers, and a benchmark construction recipe to support future Bengali NLP research.
 \end{abstract}
 
 \section{Introduction}

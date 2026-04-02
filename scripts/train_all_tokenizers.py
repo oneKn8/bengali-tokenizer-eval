@@ -16,10 +16,8 @@ import json
 import logging
 import os
 import random
-import sys
 import tempfile
 import time
-from pathlib import Path
 
 import sentencepiece as spm
 
@@ -52,6 +50,7 @@ CONFIGS = [
     # Bengali + English mixed
     ("mix-bpe-32k", "bpe", 32000, "mix"),
     ("mix-bpe-49k", "bpe", 49152, "mix"),
+    ("mix-bpe-64k", "bpe", 64000, "mix"),
     ("mix-uni-32k", "unigram", 32000, "mix"),
     ("mix-uni-49k", "unigram", 49152, "mix"),
 ]
@@ -87,11 +86,18 @@ def sample_jsonl(path: str, max_bytes: int, seed: int = SEED) -> list[str]:
     log.info("Sampled %d docs (%.2f GB) from %s", len(sampled), total / BYTES_PER_GB, path)
     return sampled
 
-
-def write_texts(texts: list[str], path: str) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        for t in texts:
-            f.write(t.replace("\n", " ") + "\n")
+def make_temp_sample(texts: list[str], prefix: str) -> str:
+    """Write sampled texts to a temporary file and return its path."""
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        suffix=".txt",
+        prefix=prefix,
+        delete=False,
+    ) as handle:
+        for text in texts:
+            handle.write(text.replace("\n", " ") + "\n")
+        return handle.name
 
 
 def train_one(
@@ -166,8 +172,7 @@ def main():
         en_texts = sample_jsonl(args.en_corpus, sample_bytes)
 
     # Write sample files
-    bn_sample = tempfile.mktemp(suffix=".txt", prefix="bn_sample_")
-    write_texts(bn_texts, bn_sample)
+    bn_sample = make_temp_sample(bn_texts, "bn_sample_")
 
     mix_sample = None
     if en_texts:
@@ -183,8 +188,7 @@ def main():
         mixed.extend(en_texts[shorter:])
         rng.shuffle(mixed)
 
-        mix_sample = tempfile.mktemp(suffix=".txt", prefix="mix_sample_")
-        write_texts(mixed, mix_sample)
+        mix_sample = make_temp_sample(mixed, "mix_sample_")
 
     results = []
     for name, algo, vocab_size, data_mix in CONFIGS:
@@ -203,8 +207,8 @@ def main():
 
     # Save training metadata
     meta_path = os.path.join(output_dir, "training_metadata.json")
-    with open(meta_path, "w") as f:
-        json.dump(results, f, indent=2)
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
     log.info("Metadata saved to %s", meta_path)
 
     # Cleanup

@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import sys
+import time
 import unicodedata
 from collections import Counter
 from pathlib import Path
@@ -31,6 +32,17 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger(__name__)
+
+DEFAULT_MIN_CHARS = 200
+DEFAULT_HF_MODELS = [
+    ("Qwen/Qwen2.5-0.5B", "qwen-2.5"),
+    ("bigscience/bloom-560m", "bloom-560m"),
+    ("TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T", "tinyllama"),
+    ("microsoft/phi-2", "phi-2"),
+    ("stabilityai/stablelm-2-1_6b", "stablelm-2"),
+    ("csebuetnlp/banglabert", "banglabert"),
+    ("csebuetnlp/banglat5", "banglat5"),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +166,19 @@ class HFTokenizer:
 # Evaluation
 # ---------------------------------------------------------------------------
 
-def load_eval_texts(path: str, max_docs: int = 5000) -> list[str]:
+
+def parse_named_spec(spec: str, fallback_name: str) -> tuple[str, str]:
+    """Parse NAME=VALUE or bare VALUE CLI specs."""
+    if "=" not in spec:
+        return fallback_name, spec
+
+    name, value = spec.split("=", 1)
+    if not name or not value:
+        raise ValueError(f"Invalid model spec: {spec!r}")
+    return name, value
+
+
+def load_eval_texts(path: str, max_docs: int = 5000, min_chars: int = DEFAULT_MIN_CHARS) -> list[str]:
     """Load evaluation texts from JSONL."""
     texts = []
     with open(path, "r", encoding="utf-8") as f:
@@ -167,7 +191,7 @@ def load_eval_texts(path: str, max_docs: int = 5000) -> list[str]:
             except json.JSONDecodeError:
                 continue
             text = obj.get("text", "")
-            if len(text) >= 100:  # skip very short docs
+            if len(text) >= min_chars:
                 texts.append(text)
             if len(texts) >= max_docs:
                 break
@@ -263,6 +287,7 @@ def probe_segmentation(tokenizer, words: list[str]) -> list[dict]:
             "word": word,
             "tokens": tokens,
             "ids": ids,
+            "n": len(tokens),
             "n_tokens": len(tokens),
         })
     return results
@@ -271,6 +296,7 @@ def probe_segmentation(tokenizer, words: list[str]) -> list[dict]:
 def evaluate_one(tokenizer, texts: list[str]) -> dict:
     """Run all metrics on one tokenizer."""
     log.info("Evaluating: %s (vocab=%d)", tokenizer.name, tokenizer.vocab_size)
+    t0 = time.time()
 
     fertility = compute_fertility(tokenizer, texts)
     compression = compute_compression_ratio(tokenizer, texts)
@@ -293,6 +319,7 @@ def evaluate_one(tokenizer, texts: list[str]) -> dict:
         "script_distribution": script_dist,
         "avg_probe_tokens": round(avg_probe_tokens, 2),
         "probe_segmentation": probes,
+        "eval_time_sec": round(time.time() - t0, 1),
     }
 
     log.info("  fertility=%.3f, compression=%.2f bytes/tok, byte_fb=%.2f%%",
@@ -307,13 +334,36 @@ def main():
     parser.add_argument("--trained-dir", default=None, help="Dir with trained .model files")
     parser.add_argument("--output", required=True, help="Output JSON path")
     parser.add_argument("--max-docs", type=int, default=5000, help="Max docs to evaluate")
+    parser.add_argument(
+        "--min-chars",
+        type=int,
+        default=DEFAULT_MIN_CHARS,
+        help="Minimum document length for inclusion",
+    )
+    parser.add_argument(
+        "--sp-model",
+        action="append",
+        default=[],
+        metavar="NAME=PATH",
+        help="Extra SentencePiece model to evaluate; accepts NAME=PATH or /path/to/model.model",
+    )
+    parser.add_argument(
+        "--hf-model",
+        action="append",
+        default=[],
+        metavar="NAME=MODEL_ID",
+        help="Extra HuggingFace tokenizer; accepts NAME=MODEL_ID or a bare model ID",
+    )
     parser.add_argument("--skip-hf", action="store_true", help="Skip HuggingFace tokenizers")
     args = parser.parse_args()
 
     # Load eval data
     log.info("Loading eval data from %s...", args.eval_data)
-    texts = load_eval_texts(args.eval_data, args.max_docs)
+    texts = load_eval_texts(args.eval_data, args.max_docs, args.min_chars)
     log.info("Loaded %d documents for evaluation.", len(texts))
+    if not texts:
+        log.error("No evaluation documents matched the current filters.")
+        sys.exit(1)
 
     tokenizers = []
 
@@ -326,21 +376,23 @@ def main():
             except Exception as e:
                 log.warning("Failed to load %s: %s", name, e)
 
-    # Load existing Kotha-1 tokenizer
-    kotha1_path = "/home/oneknight/projects/bangla-llm/tokenizer/output/bangla_bpe_32k.model"
-    if os.path.exists(kotha1_path):
-        tokenizers.append(SPMTokenizer(kotha1_path, "kotha1-bpe-32k"))
+    # Load external SentencePiece baselines passed explicitly on the CLI.
+    for spec in args.sp_model:
+        try:
+            fallback_name = Path(spec).stem if "=" not in spec else ""
+            name, model_path = parse_named_spec(spec, fallback_name)
+            tokenizers.append(SPMTokenizer(model_path, name))
+        except Exception as e:
+            log.warning("Failed to load SentencePiece model %s: %s", spec, e)
 
     # Load HuggingFace tokenizers for comparison
     if not args.skip_hf:
-        hf_models = [
-            ("meta-llama/Llama-3.2-1B", "llama-3.2"),
-            ("Qwen/Qwen2.5-0.5B", "qwen-2.5"),
-            ("google/gemma-3-1b-pt", "gemma-3"),
-            ("bigscience/bloom-560m", "bloom"),
-            ("csebuetnlp/banglabert", "banglabert"),
-            ("csebuetnlp/banglat5", "banglat5"),
-        ]
+        hf_models = list(DEFAULT_HF_MODELS)
+        if args.hf_model:
+            hf_models = []
+            for spec in args.hf_model:
+                fallback_name = spec.rsplit("/", 1)[-1] if "=" not in spec else ""
+                hf_models.append(parse_named_spec(spec, fallback_name))
 
         for model_id, name in hf_models:
             try:

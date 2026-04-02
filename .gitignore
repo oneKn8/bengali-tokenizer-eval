@@ -10,3 +10,4 @@ eval_data/
 *.out
 *.synctex.gz
 .DS_Store
+arxiv-submission.zip
