@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+eval_data/
+*.log
+*.aux
+*.bbl
+*.blg
+*.out
+*.synctex.gz
+.DS_Store
