@@ -98,7 +98,7 @@ We evaluate 14 tokenizers across four categories:
 
 \textbf{Bengali encoder tokenizers} (2): BanglaBERT and BanglaT5 \cite{banglabert2022,banglat5}, both 32K vocabularies trained on the Bangla2B+ corpus. These two models share the same tokenizer, which accounts for their identical metrics in Table~\ref{tab:main}.
 
-\textbf{Bengali LLM tokenizers} (2): Kotha-1 (our prior work; 32K BPE trained on 1.5GB Bengali text with NFC normalization) and LilTii v0.2 \cite{liltii2026} (49K BPE trained on Bengali+English).
+\textbf{Bengali LLM tokenizers} (2): Kotha-1 \cite{kotha2026} (our prior work; 32K BPE trained on 1.5GB Bengali text with NFC normalization) and LilTii v0.2 \cite{liltii2026} (49K BPE trained on Bengali+English).
 
 \textbf{Newly trained tokenizers} (5): We train tokenizers across two axes---algorithm (BPE vs.\ Unigram) and vocabulary size (32K, 49K, 64K)---on 1.5GB sampled from the Bengali corpus using SentencePiece \cite{kudo2018sentencepiece} with byte-fallback enabled, identity normalization, character coverage 0.9999, and seed 42. As discussed in Section~\ref{sec:nukta}, these tokenizers suffer from a normalization artifact that elevates byte-fallback rates; conclusions drawn from their relative comparisons should be interpreted cautiously.
 
